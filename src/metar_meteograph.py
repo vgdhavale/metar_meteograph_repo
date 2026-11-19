@@ -1,5 +1,19 @@
 # -*- coding: utf-8 -*-
 """
+Created on Thu Nov 19 10:01:48 2026
+
+@author: Radio
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Nov 18 15:27:22 2026
+
+@author: Radio
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Daily METAR meteographs for selected Indian airports.
 
 Data source: OGIMET getmetar
@@ -15,13 +29,17 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 from metar import Metar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 AIRPORTS = ["VABB", "VAAU", "VAPO", "VANP"]
 
 BASE_URL = "https://www.ogimet.com/cgi-bin/getmetar"
 OUTPUT_DIR = "output"
 LOOKBACK_DAYS = 2
+
+UTC = timezone.utc
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def fetch_metar(icao_code, start_dt, end_dt):
@@ -55,7 +73,10 @@ def parse_metar_csv(raw_csv):
 
         try:
             year, month, day, hour, minute = map(int, parts[1:6])
-            timestamp = datetime(year, month, day, hour, minute)
+
+            # OGIMET timestamps are in UTC.
+            timestamp = datetime(year, month, day, hour, minute, tzinfo=UTC)
+
         except ValueError:
             continue
 
@@ -87,7 +108,23 @@ def parse_metar_csv(raw_csv):
     return df
 
 
+def format_extreme_time(timestamp):
+    """
+    Returns both UTC and IST time for an extreme-value timestamp.
+    """
+    utc_time = timestamp.astimezone(UTC)
+    ist_time = timestamp.astimezone(IST)
+
+    return (
+        f"UTC: {utc_time:%d-%b-%Y %H:%M}\n"
+        f"IST: {ist_time:%d-%b-%Y %H:%M}"
+    )
+
+
 def annotate_extremes(ax, series, label, unit, show_min=True):
+    """
+    Adds bold, enlarged maximum and minimum annotations to a plot.
+    """
     if series is None or series.empty:
         return
 
@@ -99,29 +136,91 @@ def annotate_extremes(ax, series, label, unit, show_min=True):
     max_value = valid.max()
     max_time = valid.idxmax()
 
+    max_text = (
+        f"MAX {label.upper()}: {max_value:.1f} {unit}\n"
+        f"{format_extreme_time(max_time)}"
+    )
+
     ax.annotate(
-        f"Max {label}: {max_value:.1f} {unit}\n{max_time:%d-%b %H:%M}",
+        max_text,
         xy=(max_time, max_value),
-        xytext=(10, 10),
+        xytext=(12, 15),
         textcoords="offset points",
-        fontsize=8,
+        fontsize=11,
+        fontweight="bold",
         color="darkred",
-        arrowprops={"arrowstyle": "->", "color": "darkred", "lw": 1},
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": "white",
+            "edgecolor": "darkred",
+            "alpha": 0.85,
+        },
+        arrowprops={
+            "arrowstyle": "->",
+            "color": "darkred",
+            "lw": 1.5,
+        },
     )
 
     if show_min:
         min_value = valid.min()
         min_time = valid.idxmin()
 
-        ax.annotate(
-            f"Min {label}: {min_value:.1f} {unit}\n{min_time:%d-%b %H:%M}",
-            xy=(min_time, min_value),
-            xytext=(10, -28),
-            textcoords="offset points",
-            fontsize=8,
-            color="darkblue",
-            arrowprops={"arrowstyle": "->", "color": "darkblue", "lw": 1},
+        min_text = (
+            f"MIN {label.upper()}: {min_value:.1f} {unit}\n"
+            f"{format_extreme_time(min_time)}"
         )
+
+        ax.annotate(
+            min_text,
+            xy=(min_time, min_value),
+            xytext=(12, -45),
+            textcoords="offset points",
+            fontsize=11,
+            fontweight="bold",
+            color="darkblue",
+            bbox={
+                "boxstyle": "round,pad=0.35",
+                "facecolor": "white",
+                "edgecolor": "darkblue",
+                "alpha": 0.85,
+            },
+            arrowprops={
+                "arrowstyle": "->",
+                "color": "darkblue",
+                "lw": 1.5,
+            },
+        )
+
+
+def style_axis(ax, ylabel):
+    """
+    Makes axis labels, tick labels, and legend text bold.
+    """
+    ax.set_ylabel(
+        ylabel,
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    ax.set_xlabel(
+        "Time (UTC)",
+        fontsize=12,
+        fontweight="bold",
+    )
+
+    ax.tick_params(axis="both", labelsize=11)
+
+    for tick_label in ax.get_xticklabels() + ax.get_yticklabels():
+        tick_label.set_fontweight("bold")
+
+    legend = ax.legend(loc="best", fontsize=11)
+    legend.set_title(None)
+
+    for text in legend.get_texts():
+        text.set_fontweight("bold")
+
+    ax.grid(True, alpha=0.3)
 
 
 def plot_meteograph(df, icao_code):
@@ -129,21 +228,23 @@ def plot_meteograph(df, icao_code):
         print(f"{icao_code}: No valid METAR observations found.")
         return
 
-    fig, axes = plt.subplots(5, 1, figsize=(12, 12), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(14, 14), sharex=True)
     ax1, ax2, ax3, ax4, ax5 = axes
 
     fig.suptitle(
         f"Meteograph Panel: {icao_code}",
-        fontsize=14,
+        fontsize=18,
         fontweight="bold",
     )
 
+    # Temperature and dew point
     ax1.plot(
         df.index,
         df["Temperature"],
         color="red",
         marker="o",
-        markersize=3,
+        markersize=4,
+        linewidth=2,
         label="Temperature (°C)",
     )
 
@@ -154,13 +255,10 @@ def plot_meteograph(df, icao_code):
             color="blue",
             linestyle="--",
             marker="o",
-            markersize=3,
+            markersize=4,
+            linewidth=2,
             label="Dew Point (°C)",
         )
-
-    ax1.set_ylabel("Temperature (°C)")
-    ax1.legend(loc="best")
-    ax1.grid(True, alpha=0.3)
 
     annotate_extremes(
         ax1,
@@ -170,18 +268,18 @@ def plot_meteograph(df, icao_code):
         show_min=True,
     )
 
+    style_axis(ax1, "Temperature (°C)")
+
+    # Wind speed
     ax2.plot(
         df.index,
         df["WindSpeed"],
         color="purple",
         marker="x",
-        markersize=4,
+        markersize=5,
+        linewidth=2,
         label="Wind Speed (kt)",
     )
-
-    ax2.set_ylabel("Wind Speed (kt)")
-    ax2.legend(loc="best")
-    ax2.grid(True, alpha=0.3)
 
     annotate_extremes(
         ax2,
@@ -191,33 +289,34 @@ def plot_meteograph(df, icao_code):
         show_min=False,
     )
 
+    style_axis(ax2, "Wind Speed (kt)")
+
+    # Wind direction
     ax3.plot(
         df.index,
         df["WindDir"],
         color="green",
         marker="x",
-        markersize=4,
+        markersize=5,
+        linewidth=2,
         label="Wind Direction (°)",
     )
 
-    ax3.set_ylabel("Wind Direction (°)")
     ax3.set_ylim(0, 360)
     ax3.set_yticks([0, 90, 180, 270, 360])
-    ax3.legend(loc="best")
-    ax3.grid(True, alpha=0.3)
 
+    style_axis(ax3, "Wind Direction (°)")
+
+    # Pressure
     ax4.plot(
         df.index,
         df["Pressure"],
         color="darkorange",
         marker="x",
-        markersize=4,
+        markersize=5,
+        linewidth=2,
         label="Pressure (hPa)",
     )
-
-    ax4.set_ylabel("Pressure (hPa)")
-    ax4.legend(loc="best")
-    ax4.grid(True, alpha=0.3)
 
     annotate_extremes(
         ax4,
@@ -227,18 +326,18 @@ def plot_meteograph(df, icao_code):
         show_min=True,
     )
 
+    style_axis(ax4, "Pressure (hPa)")
+
+    # Visibility
     ax5.plot(
         df.index,
         df["Visibility"],
         color="teal",
         marker="x",
-        markersize=4,
+        markersize=5,
+        linewidth=2,
         label="Visibility (m)",
     )
-
-    ax5.set_ylabel("Visibility (m)")
-    ax5.legend(loc="best")
-    ax5.grid(True, alpha=0.3)
 
     annotate_extremes(
         ax5,
@@ -247,6 +346,8 @@ def plot_meteograph(df, icao_code):
         "m",
         show_min=True,
     )
+
+    style_axis(ax5, "Visibility (m)")
 
     fig.autofmt_xdate()
     fig.tight_layout(rect=[0, 0, 1, 0.97])
@@ -263,7 +364,7 @@ def plot_meteograph(df, icao_code):
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    end_dt = datetime.utcnow()
+    end_dt = datetime.now(UTC)
     start_dt = end_dt - timedelta(days=LOOKBACK_DAYS)
 
     for icao_code in AIRPORTS:
