@@ -36,7 +36,7 @@ AIRPORTS = ["VABB", "VAAU", "VAPO", "VANP"]
 
 BASE_URL = "https://www.ogimet.com/cgi-bin/getmetar"
 OUTPUT_DIR = "output"
-LOOKBACK_DAYS = 2
+LOOKBACK_DAYS = 1
 
 UTC = timezone.utc
 IST = ZoneInfo("Asia/Kolkata")
